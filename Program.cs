@@ -1,19 +1,29 @@
-?using System.CommandLine;
+using System.CommandLine;
 using System.IO;
 using System.Threading.Tasks;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 class Program
 {
+    public class Config
+    {
+        public string? Path { get; set; }
+        public List<string>? Saves { get; set; }
+    }
+
     static async Task<int> Main(string[] args)
     {
         var pathOption = new Option<DirectoryInfo>(
             name: "--path",
-            description: "The target backup directory (e.g., a cloud or network drive).")
-        {
-            IsRequired = true
-        };
+            description: "The target backup directory (e.g., a cloud or network drive).");
+
+        var configOption = new Option<FileInfo>(
+            name: "--config",
+            description: "Path to the YAML configuration file.");
 
         var rootCommand = new RootCommand("Minecraft Local Save Sync (MLSS)");
+        rootCommand.AddGlobalOption(configOption);
 
         var pushCommand = new Command("push", "Push saves from the local Minecraft directory to the backup directory.");
         pushCommand.AddOption(pathOption);
@@ -30,24 +40,104 @@ class Program
             return 1;
         }
 
-        pushCommand.SetHandler((path) =>
+        pushCommand.SetHandler((path, configFile) =>
         {
-            Console.WriteLine("Pushing saves to backup directory...");
-            CopyDirectory(minecraftSavesPath, path.FullName, true);
-            Console.WriteLine("Push complete.");
-        }, pathOption);
+            ExecuteSync(path, configFile, minecraftSavesPath, SyncDirection.Push);
+        }, pathOption, configOption);
 
-        pullCommand.SetHandler((path) =>
+        pullCommand.SetHandler((path, configFile) =>
         {
-            Console.WriteLine("Pulling saves from backup directory...");
-            CopyDirectory(path.FullName, minecraftSavesPath, true);
-            Console.WriteLine("Pull complete.");
-        }, pathOption);
+            ExecuteSync(path, configFile, minecraftSavesPath, SyncDirection.Pull);
+        }, pathOption, configOption);
 
         rootCommand.AddCommand(pushCommand);
         rootCommand.AddCommand(pullCommand);
 
         return await rootCommand.InvokeAsync(args);
+    }
+
+    private enum SyncDirection { Push, Pull }
+
+    private static void ExecuteSync(DirectoryInfo? path, FileInfo? configFile, string minecraftSavesPath, SyncDirection direction)
+    {
+        var config = LoadConfig(configFile);
+
+        var backupPath = path?.FullName ?? config?.Path;
+        if (string.IsNullOrEmpty(backupPath))
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("Error: Backup path must be provided via --path option or in the config file.");
+            Console.ResetColor();
+            return;
+        }
+
+        if (!Directory.Exists(backupPath))
+        {
+            // Error out if the directory does not exist.
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Error: Backup folder '{backupPath}' does not exist.");
+            Console.ResetColor();
+            return;
+        }
+
+        var action = direction == SyncDirection.Push ? "Pushing" : "Pulling";
+        Console.WriteLine($"{action} saves...");
+
+        var savesToSync = config?.Saves;
+
+        if (savesToSync == null || savesToSync.Count == 0)
+        {
+            // Sync all saves
+            var source = direction == SyncDirection.Push ? minecraftSavesPath : backupPath;
+            var destination = direction == SyncDirection.Push ? backupPath : minecraftSavesPath;
+            CopyDirectory(source, destination, true);
+        }
+        else
+        {
+            // Sync only specified saves
+            foreach (var save in savesToSync)
+            {
+                var source = direction == SyncDirection.Push ? Path.Combine(minecraftSavesPath, save) : Path.Combine(backupPath, save);
+                var destination = direction == SyncDirection.Push ? Path.Combine(backupPath, save) : Path.Combine(minecraftSavesPath, save);
+
+                if (Directory.Exists(source))
+                {
+                    Console.WriteLine($"  - {save}");
+                    CopyDirectory(source, destination, true);
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"Warning: Save folder '{save}' not found at source. Skipping.");
+                    Console.ResetColor();
+                }
+            }
+        }
+
+        Console.WriteLine("Sync complete.");
+    }
+
+    private static Config? LoadConfig(FileInfo? configFile)
+    {
+        if (configFile == null || !configFile.Exists)
+        {
+            return null;
+        }
+
+        try
+        {
+            var deserializer = new DeserializerBuilder()
+                .WithNamingConvention(CamelCaseNamingConvention.Instance)
+                .Build();
+            return deserializer.Deserialize<Config>(File.ReadAllText(configFile.FullName));
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Error reading or parsing config file: {ex.Message}");
+            Console.ResetColor();
+            return null;
+        }
     }
 
     static string? GetMinecraftSavesPath()
