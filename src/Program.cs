@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-class Program
+public partial class Program
 {
     public class Config
     {
@@ -56,9 +56,9 @@ class Program
         return await rootCommand.InvokeAsync(args);
     }
 
-    private enum SyncDirection { Push, Pull }
+    public enum SyncDirection { Push, Pull }
 
-    private static void ExecuteSync(DirectoryInfo? path, FileInfo? configFile, string minecraftSavesPath, SyncDirection direction)
+    public static void ExecuteSync(DirectoryInfo? path, FileInfo? configFile, string minecraftSavesPath, SyncDirection direction)
     {
         var config = LoadConfig(configFile);
 
@@ -117,7 +117,7 @@ class Program
         Console.WriteLine("Sync complete.");
     }
 
-    private static Config? LoadConfig(FileInfo? configFile)
+    public static Config? LoadConfig(FileInfo? configFile)
     {
         if (configFile == null || !configFile.Exists)
         {
