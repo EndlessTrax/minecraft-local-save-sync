@@ -47,7 +47,7 @@ jobs:
     
     - name: Publish Windows x64
       run: |
-        dotnet publish `
+        dotnet publish src/minecraft-local-save-sync.csproj `
           --configuration Release `
           --runtime win-x64 `
           --self-contained true `
@@ -57,7 +57,7 @@ jobs:
     
     - name: Publish Windows x86
       run: |
-        dotnet publish `
+        dotnet publish src/minecraft-local-save-sync.csproj `
           --configuration Release `
           --runtime win-x86 `
           --self-contained true `
@@ -67,7 +67,7 @@ jobs:
     
     - name: Publish Windows ARM64
       run: |
-        dotnet publish `
+        dotnet publish src/minecraft-local-save-sync.csproj `
           --configuration Release `
           --runtime win-arm64 `
           --self-contained true `
