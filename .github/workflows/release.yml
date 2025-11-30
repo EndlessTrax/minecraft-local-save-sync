@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Extract version from tag
+      id: get_version
+      shell: pwsh
+      run: |
+        $tag = "${{ github.ref_name }}"
+        $version = $tag -replace '^v', ''
+        echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+        echo "Building version: $version"
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build with version
+      run: |
+        dotnet build `
+          --configuration Release `
+          --no-restore `
+          /p:Version=${{ steps.get_version.outputs.VERSION }} `
+          /p:AssemblyVersion=${{ steps.get_version.outputs.VERSION }} `
+          /p:FileVersion=${{ steps.get_version.outputs.VERSION }}
+    
+    - name: Test
+      run: |
+        dotnet test `
+          --configuration Release `
+          --no-build `
+          --verbosity normal
+    
+    - name: Publish Windows x64
+      run: |
+        dotnet publish src/minecraft-local-save-sync.csproj `
+          --configuration Release `
+          --runtime win-x64 `
+          --self-contained true `
+          -p:PublishSingleFile=true `
+          -p:Version=${{ steps.get_version.outputs.VERSION }} `
+          --output ./publish/win-x64
+    
+    - name: Publish Windows x86
+      run: |
+        dotnet publish src/minecraft-local-save-sync.csproj `
+          --configuration Release `
+          --runtime win-x86 `
+          --self-contained true `
+          -p:PublishSingleFile=true `
+          -p:Version=${{ steps.get_version.outputs.VERSION }} `
+          --output ./publish/win-x86
+    
+    - name: Publish Windows ARM64
+      run: |
+        dotnet publish src/minecraft-local-save-sync.csproj `
+          --configuration Release `
+          --runtime win-arm64 `
+          --self-contained true `
+          -p:PublishSingleFile=true `
+          -p:Version=${{ steps.get_version.outputs.VERSION }} `
+          --output ./publish/win-arm64
+    
+    - name: Create zip archives
+      shell: pwsh
+      run: |
+        Compress-Archive `
+          -Path ./publish/win-x64/* `
+          -DestinationPath mlss-win-x64.zip
+        Compress-Archive `
+          -Path ./publish/win-x86/* `
+          -DestinationPath mlss-win-x86.zip
+        Compress-Archive `
+          -Path ./publish/win-arm64/* `
+          -DestinationPath mlss-win-arm64.zip
+
+    - name: Create Release
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        $tag = "v${{ steps.get_version.outputs.VERSION }}"
+        gh release create $tag `
+          ./mlss-win-x64.zip `
+          ./mlss-win-x86.zip `
+          ./mlss-win-arm64.zip `
+          --title $tag `
+          --generate-notes
