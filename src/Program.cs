@@ -90,7 +90,9 @@ public partial class Program
         Console.WriteLine($"{action} saves...");
 
         // If --save flag is provided, it overrides config saves
-        var savesToSync = !string.IsNullOrEmpty(save) ? new List<string> { save } : config?.Saves;
+        var savesToSync = !string.IsNullOrEmpty(save)
+            ? new List<string> { save.Trim() }
+            : config?.Saves?.Select(s => s.Trim()).ToList();
 
         if (savesToSync == null || savesToSync.Count == 0)
         {
