@@ -22,14 +22,20 @@ public partial class Program
             name: "--config",
             description: "Path to the YAML configuration file.");
 
+        var saveOption = new Option<string>(
+            name: "--save",
+            description: "Sync a specific save/world. Overrides the saves list in config.");
+
         var rootCommand = new RootCommand("Minecraft Local Save Sync (MLSS)");
         rootCommand.AddGlobalOption(configOption);
 
         var pushCommand = new Command("push", "Push saves from the local Minecraft directory to the backup directory.");
         pushCommand.AddOption(pathOption);
+        pushCommand.AddOption(saveOption);
 
         var pullCommand = new Command("pull", "Pull saves from the backup directory to the local Minecraft directory.");
         pullCommand.AddOption(pathOption);
+        pullCommand.AddOption(saveOption);
 
         var minecraftSavesPath = GetMinecraftSavesPath();
         if (string.IsNullOrEmpty(minecraftSavesPath))
@@ -40,15 +46,15 @@ public partial class Program
             return 1;
         }
 
-        pushCommand.SetHandler((path, configFile) =>
+        pushCommand.SetHandler((path, configFile, save) =>
         {
-            ExecuteSync(path, configFile, minecraftSavesPath, SyncDirection.Push);
-        }, pathOption, configOption);
+            ExecuteSync(path, configFile, save, minecraftSavesPath, SyncDirection.Push);
+        }, pathOption, configOption, saveOption);
 
-        pullCommand.SetHandler((path, configFile) =>
+        pullCommand.SetHandler((path, configFile, save) =>
         {
-            ExecuteSync(path, configFile, minecraftSavesPath, SyncDirection.Pull);
-        }, pathOption, configOption);
+            ExecuteSync(path, configFile, save, minecraftSavesPath, SyncDirection.Pull);
+        }, pathOption, configOption, saveOption);
 
         rootCommand.AddCommand(pushCommand);
         rootCommand.AddCommand(pullCommand);
@@ -58,7 +64,7 @@ public partial class Program
 
     public enum SyncDirection { Push, Pull }
 
-    public static void ExecuteSync(DirectoryInfo? path, FileInfo? configFile, string minecraftSavesPath, SyncDirection direction)
+    public static void ExecuteSync(DirectoryInfo? path, FileInfo? configFile, string? save, string minecraftSavesPath, SyncDirection direction)
     {
         var config = LoadConfig(configFile);
 
@@ -83,7 +89,10 @@ public partial class Program
         var action = direction == SyncDirection.Push ? "Pushing" : "Pulling";
         Console.WriteLine($"{action} saves...");
 
-        var savesToSync = config?.Saves;
+        // If --save flag is provided, it overrides config saves
+        var savesToSync = !string.IsNullOrEmpty(save)
+            ? new List<string> { save.Trim() }
+            : config?.Saves?.Select(s => s.Trim()).ToList();
 
         if (savesToSync == null || savesToSync.Count == 0)
         {
@@ -95,20 +104,20 @@ public partial class Program
         else
         {
             // Sync only specified saves
-            foreach (var save in savesToSync)
+            foreach (var saveName in savesToSync)
             {
-                var source = direction == SyncDirection.Push ? Path.Combine(minecraftSavesPath, save) : Path.Combine(backupPath, save);
-                var destination = direction == SyncDirection.Push ? Path.Combine(backupPath, save) : Path.Combine(minecraftSavesPath, save);
+                var source = direction == SyncDirection.Push ? Path.Combine(minecraftSavesPath, saveName) : Path.Combine(backupPath, saveName);
+                var destination = direction == SyncDirection.Push ? Path.Combine(backupPath, saveName) : Path.Combine(minecraftSavesPath, saveName);
 
                 if (Directory.Exists(source))
                 {
-                    Console.WriteLine($"  - {save}");
+                    Console.WriteLine($"  - {saveName}");
                     CopyDirectory(source, destination, true);
                 }
                 else
                 {
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"Warning: Save folder '{save}' not found at source. Skipping.");
+                    Console.WriteLine($"Warning: Save folder '{saveName}' not found at source. Skipping.");
                     Console.ResetColor();
                 }
             }

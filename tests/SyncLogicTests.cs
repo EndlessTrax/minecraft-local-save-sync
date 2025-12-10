@@ -37,7 +37,7 @@ public class SyncLogicTests : IDisposable
         // No-op: CLI wiring is tested in integration; here we call logic directly.
 
         // Act
-        global::Program.ExecuteSync(new DirectoryInfo(_backupPath), null, _minecraftSavesPath, global::Program.SyncDirection.Push);
+        global::Program.ExecuteSync(new DirectoryInfo(_backupPath), null, null, _minecraftSavesPath, global::Program.SyncDirection.Push);
 
         // Assert
         Assert.True(Directory.Exists(Path.Combine(_backupPath, "World1")));
@@ -58,7 +58,7 @@ public class SyncLogicTests : IDisposable
         File.WriteAllText(configPath, serializer.Serialize(config));
 
         // Act
-        global::Program.ExecuteSync(new DirectoryInfo(_backupPath), new FileInfo(configPath), _minecraftSavesPath, global::Program.SyncDirection.Pull);
+        global::Program.ExecuteSync(new DirectoryInfo(_backupPath), new FileInfo(configPath), null, _minecraftSavesPath, global::Program.SyncDirection.Pull);
 
         // Assert
         Assert.True(Directory.Exists(Path.Combine(_minecraftSavesPath, "World1")));
@@ -92,6 +92,88 @@ public class SyncLogicTests : IDisposable
 
         // Assert
         Assert.Null(config);
+    }
+
+    [Fact]
+    public void Push_WithSaveFlag_CopiesOnlySpecifiedSave()
+    {
+        // Arrange
+        CreateTestSave("World1", _minecraftSavesPath);
+        CreateTestSave("World2", _minecraftSavesPath);
+
+        // Act
+        global::Program.ExecuteSync(new DirectoryInfo(_backupPath), null, "World1", _minecraftSavesPath, global::Program.SyncDirection.Push);
+
+        // Assert
+        Assert.True(Directory.Exists(Path.Combine(_backupPath, "World1")));
+        Assert.True(File.Exists(Path.Combine(_backupPath, "World1", "level.dat")));
+        Assert.False(Directory.Exists(Path.Combine(_backupPath, "World2")));
+    }
+
+    [Fact]
+    public void Pull_WithSaveFlag_CopiesOnlySpecifiedSave()
+    {
+        // Arrange
+        CreateTestSave("World1", _backupPath);
+        CreateTestSave("World2", _backupPath);
+
+        // Act
+        global::Program.ExecuteSync(new DirectoryInfo(_backupPath), null, "World2", _minecraftSavesPath, global::Program.SyncDirection.Pull);
+
+        // Assert
+        Assert.False(Directory.Exists(Path.Combine(_minecraftSavesPath, "World1")));
+        Assert.True(Directory.Exists(Path.Combine(_minecraftSavesPath, "World2")));
+        Assert.True(File.Exists(Path.Combine(_minecraftSavesPath, "World2", "level.dat")));
+    }
+
+    [Fact]
+    public void Push_SaveFlagOverridesConfig_CopiesOnlyFlaggedSave()
+    {
+        // Arrange
+        CreateTestSave("World1", _minecraftSavesPath);
+        CreateTestSave("World2", _minecraftSavesPath);
+        CreateTestSave("World3", _minecraftSavesPath);
+        
+        // Config specifies World1 and World2
+        var config = new global::Program.Config { Saves = new List<string> { "World1", "World2" } };
+        var configPath = Path.Combine(_testRoot, "config.yaml");
+        var serializer = new SerializerBuilder().WithNamingConvention(CamelCaseNamingConvention.Instance).Build();
+        File.WriteAllText(configPath, serializer.Serialize(config));
+
+        // Act - but --save flag should override config
+        global::Program.ExecuteSync(new DirectoryInfo(_backupPath), new FileInfo(configPath), "World3", _minecraftSavesPath, global::Program.SyncDirection.Push);
+
+        // Assert - only World3 should be copied
+        Assert.False(Directory.Exists(Path.Combine(_backupPath, "World1")));
+        Assert.False(Directory.Exists(Path.Combine(_backupPath, "World2")));
+        Assert.True(Directory.Exists(Path.Combine(_backupPath, "World3")));
+        Assert.True(File.Exists(Path.Combine(_backupPath, "World3", "level.dat")));
+    }
+
+    [Fact]
+    public void Push_SaveFlagWithConfigPath_UsesConfigPathAndFlaggedSave()
+    {
+        // Arrange
+        CreateTestSave("World1", _minecraftSavesPath);
+        CreateTestSave("World2", _minecraftSavesPath);
+        
+        // Config with a path and saves list
+        var config = new global::Program.Config 
+        { 
+            Path = _backupPath,
+            Saves = new List<string> { "World1" } 
+        };
+        var configPath = Path.Combine(_testRoot, "config.yaml");
+        var serializer = new SerializerBuilder().WithNamingConvention(CamelCaseNamingConvention.Instance).Build();
+        File.WriteAllText(configPath, serializer.Serialize(config));
+
+        // Act - using config for path, but --save flag for specific save
+        global::Program.ExecuteSync(null, new FileInfo(configPath), "World2", _minecraftSavesPath, global::Program.SyncDirection.Push);
+
+        // Assert - path from config, but only World2 (from --save flag) should be copied
+        Assert.False(Directory.Exists(Path.Combine(_backupPath, "World1")));
+        Assert.True(Directory.Exists(Path.Combine(_backupPath, "World2")));
+        Assert.True(File.Exists(Path.Combine(_backupPath, "World2", "level.dat")));
     }
 
     public void Dispose()
